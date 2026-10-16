@@ -1,0 +1,6 @@
+{
+  "outputDirectory": "public",
+  "functions": {
+    "api/generate.js": { "includeFiles": "lib/**" }
+  }
+}

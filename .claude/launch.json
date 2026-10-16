@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "blockit",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ishangupta/Documents/BlOckiT/dev-server.js"],
+      "port": 3000
+    }
+  ]
+}

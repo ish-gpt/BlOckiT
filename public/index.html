@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Block distracting websites on your iPhone with one tap.">
+  <meta name="theme-color" content="#0e0d12">
+  <title>BlOckiT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap">
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+  <main class="wrap">
+    <header class="hero">
+      <h1 class="logo" aria-label="BlOckiT">Bl<span class="logo-o" aria-hidden="true"></span>ckiT</h1>
+      <p class="tagline">Block the noise. <em>Keep the focus.</em></p>
+    </header>
+
+    <form id="blockForm" class="card" method="post" action="/api/generate" novalidate>
+      <label class="label" for="domains">Sites to block <span class="hint">one per line</span></label>
+      <textarea id="domains" name="domains" rows="7" spellcheck="false" autocapitalize="off" autocomplete="off"
+        autocorrect="off" inputmode="url" placeholder="instagram.com&#10;tiktok.com&#10;youtube.com"></textarea>
+
+      <div class="chips" role="group" aria-label="Quick add">
+        <button type="button" class="chip" data-domain="instagram.com">Instagram</button>
+        <button type="button" class="chip" data-domain="tiktok.com">TikTok</button>
+        <button type="button" class="chip" data-domain="youtube.com">YouTube</button>
+        <button type="button" class="chip" data-domain="reddit.com">Reddit</button>
+        <button type="button" class="chip" data-domain="x.com">X</button>
+        <button type="button" class="chip" data-domain="facebook.com">Facebook</button>
+        <button type="button" class="chip" data-domain="netflix.com">Netflix</button>
+      </div>
+
+      <details class="access">
+        <summary>Have an access code?</summary>
+        <input type="password" name="accessCode" autocomplete="off" placeholder="Access code" aria-label="Access code">
+      </details>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <button type="submit" id="submitBtn" class="btn" disabled>
+        <span id="btnLabel">Add a site to start</span>
+      </button>
+    </form>
+
+    <section class="steps" aria-labelledby="stepsTitle">
+      <h2 id="stepsTitle">Three taps to focus</h2>
+      <ol>
+        <li><strong>Open this page in Safari</strong> and hit the button. Tap <em>Allow</em>.</li>
+        <li><strong>Settings → Profile Downloaded</strong> → <em>Install</em>.</li>
+        <li><strong>Done.</strong> Those sites won't load in Safari anymore.</li>
+      </ol>
+    </section>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+
+</html>
