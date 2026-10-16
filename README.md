@@ -29,6 +29,16 @@ public/index.html ──POST /api/generate──▶ lib/handler.js
 - The form uses a native POST (not `fetch`), so iOS Safari passes the response
   straight to the profile installer.
 - Every domain is blocked at both `https://domain` and `https://www.domain`.
+- Profile identifiers are fixed (`com.blockit.profile`), so installing a new list replaces
+  the old profile instead of adding a second one.
+- **Lock it** adds a `com.apple.profileRemovalPassword` payload, so iOS asks for that
+  password before removing the profile. The password is stored as plain text inside the
+  `.mobileconfig`, so delete the file after installing. It's separate from your iPhone
+  passcode. Erasing the phone still removes the profile.
+- **Lock forever** makes a random 256-bit password, writes it into the profile, and
+  discards it. It's never shown, logged, or stored. The profile also gets a unique
+  identifier (`com.blockit.profile.permanent.<UUID>`), so no later profile can replace it.
+  Only erasing the iPhone removes it, and its list can never be changed.
 - The profile includes `DenyListURLs` (iOS 14+) and the legacy `BlacklistedURLs`.
 - Signing runs fully in memory with `node-forge`. It never shells out to `openssl`.
 - The server never logs or stores domain lists.

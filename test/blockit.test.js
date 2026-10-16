@@ -5,7 +5,15 @@ const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const forge = require('node-forge');
 
-const { normaliseDomain, parseDomains, buildProfile, ValidationError } = require('../lib/profile');
+const {
+  normaliseDomain,
+  parseDomains,
+  validateRemovalPassword,
+  generatePermanentPassword,
+  buildProfile,
+  ValidationError,
+  PROFILE_ID,
+} = require('../lib/profile');
 
 // ---------- throwaway CA -> intermediate -> leaf chain ----------
 
@@ -71,7 +79,7 @@ test('parseDomains de-duplicates and validates', () => {
   assert.throws(() => parseDomains('x'.repeat(30000)), ValidationError);
 });
 
-test('buildProfile inserts escaped URLs and unique UUIDs', () => {
+test('buildProfile inserts URLs, fixed identifiers and fresh UUIDs', () => {
   const xml = buildProfile(['example.com', 'www.foo.com']);
   assert.match(xml, /<string>https:\/\/example\.com<\/string>/);
   assert.match(xml, /<string>https:\/\/www\.example\.com<\/string>/);
@@ -80,7 +88,57 @@ test('buildProfile inserts escaped URLs and unique UUIDs', () => {
   const uuids = [...xml.matchAll(/<key>PayloadUUID<\/key>\s*<string>([0-9A-F-]{36})<\/string>/g)].map((m) => m[1]);
   assert.equal(uuids.length, 2);
   assert.notEqual(uuids[0], uuids[1]);
-  assert.match(xml, new RegExp(`com\\.example\\.blocker\\.contentfilter\\.${uuids[0]}`));
+  assert.match(xml, /<key>PayloadIdentifier<\/key>\s*<string>com\.blockit\.profile<\/string>/);
+  assert.match(xml, /<string>com\.blockit\.profile\.contentfilter<\/string>/);
+  assert.equal(PROFILE_ID, 'com.blockit.profile');
+  assert.doesNotMatch(xml, /profileRemovalPassword/);
+  const cf = xml.match(/<key>ContentFilterUUID<\/key>\s*<string>([0-9A-F-]{36})<\/string>/);
+  assert.ok(cf, 'ContentFilterUUID present');
+  assert.ok(!uuids.includes(cf[1]), 'ContentFilterUUID is distinct');
+});
+
+test('two builds share identifiers so the new profile replaces the old one', () => {
+  const ids = (xml) => [...xml.matchAll(/<key>PayloadIdentifier<\/key>\s*<string>([^<]+)<\/string>/g)].map((m) => m[1]);
+  assert.deepEqual(ids(buildProfile(['a.com'])), ids(buildProfile(['b.com'])));
+});
+
+test('locked profile embeds an escaped removal password payload', () => {
+  const xml = buildProfile(['a.com'], { removalPassword: 'p<&>"ss' });
+  assert.match(xml, /<string>com\.apple\.profileRemovalPassword<\/string>/);
+  assert.match(xml, /<key>RemovalPassword<\/key>\s*<string>p&lt;&amp;&gt;&quot;ss<\/string>/);
+  assert.match(xml, /\(Locked\)/);
+  const uuids = [...xml.matchAll(/<key>PayloadUUID<\/key>\s*<string>([0-9A-F-]{36})<\/string>/g)].map((m) => m[1]);
+  assert.equal(new Set(uuids).size, 3);
+});
+
+test('validateRemovalPassword rules', () => {
+  assert.equal(validateRemovalPassword(''), null);
+  assert.equal(validateRemovalPassword(undefined), null);
+  assert.equal(validateRemovalPassword('longenough', 'longenough'), 'longenough');
+  assert.throws(() => validateRemovalPassword('short'), /at least 6/);
+  assert.throws(() => validateRemovalPassword('x'.repeat(129)), /under 128/);
+  assert.throws(() => validateRemovalPassword('bad\u0000pass'), /cannot accept/);
+  assert.throws(() => validateRemovalPassword('longenough', 'different'), /don't match/);
+  assert.throws(() => validateRemovalPassword(['array']), /not valid/);
+});
+
+test('permanent profiles get one-off identifiers that nothing else can replace', () => {
+  const ids = (xml) => [...xml.matchAll(/<key>PayloadIdentifier<\/key>\s*<string>([^<]+)<\/string>/g)].map((m) => m[1]);
+  const cfu = (xml) => xml.match(/<key>ContentFilterUUID<\/key>\s*<string>([^<]+)</)[1];
+  const a = buildProfile(['a.com'], { removalPassword: 'x'.repeat(10), permanent: true });
+  const b = buildProfile(['a.com'], { removalPassword: 'x'.repeat(10), permanent: true });
+  const normal = buildProfile(['a.com']);
+  assert.match(ids(a).at(-1), /^com\.blockit\.profile\.permanent\.[0-9A-F-]{36}$/);
+  assert.notDeepEqual(ids(a), ids(b));
+  assert.ok(!ids(a).some((id) => ids(normal).includes(id)));
+  assert.notEqual(cfu(a), cfu(normal));
+  assert.match(a, /\(Permanent\)/);
+});
+
+test('generatePermanentPassword is long, random and plist-safe', () => {
+  const p1 = generatePermanentPassword();
+  assert.match(p1, /^[A-Za-z0-9_-]{43}$/);
+  assert.notEqual(p1, generatePermanentPassword());
 });
 
 // ---------- signing ----------
@@ -161,6 +219,54 @@ test('handler hides signing misconfiguration details from the client', () => {
   const res = handler.generate({ method: 'POST', body: { domains: 'a.com' } });
   assert.equal(res.status, 500);
   assert.doesNotMatch(res.body, /SSL_/);
+});
+
+test('handler only locks when the Lock it switch is on', () => {
+  const { handler } = freshModules(goodEnv);
+  const contentOf = (res) => {
+    const msg = forge.pkcs7.messageFromAsn1(forge.asn1.fromDer(res.body.toString('binary')));
+    return forge.util.decodeUtf8(msg.rawCapture.content.value[0].value);
+  };
+
+  const locked = handler.generate({
+    method: 'POST',
+    body: { domains: 'a.com', lock: 'on', lockPassword: 'friend-secret', lockPasswordConfirm: 'friend-secret' },
+  });
+  assert.equal(locked.status, 200);
+  assert.match(contentOf(locked), /friend-secret/);
+
+  const ignored = handler.generate({ method: 'POST', body: { domains: 'a.com', lockPassword: 'friend-secret' } });
+  assert.equal(ignored.status, 200);
+  assert.doesNotMatch(contentOf(ignored), /friend-secret|profileRemovalPassword/);
+
+  assert.equal(handler.generate({ method: 'POST', body: { domains: 'a.com', lock: 'on' } }).status, 400);
+  const mismatch = handler.generate({
+    method: 'POST',
+    body: { domains: 'a.com', lock: 'on', lockPassword: 'friend-secret', lockPasswordConfirm: 'nope-nope' },
+  });
+  assert.equal(mismatch.status, 400);
+  assert.doesNotMatch(mismatch.body, /friend-secret/);
+});
+
+test('handler permanent mode: needs the tick, never echoes or reuses a password', () => {
+  const { handler } = freshModules(goodEnv);
+  const contentOf = (res) => {
+    const msg = forge.pkcs7.messageFromAsn1(forge.asn1.fromDer(res.body.toString('binary')));
+    return forge.util.decodeUtf8(msg.rawCapture.content.value[0].value);
+  };
+  const pwOf = (xml) => xml.match(/<key>RemovalPassword<\/key>\s*<string>([^<]+)</)[1];
+
+  assert.equal(handler.generate({ method: 'POST', body: { domains: 'a.com', lock: 'on', lockMode: 'permanent' } }).status, 400);
+
+  const body = { domains: 'a.com', lock: 'on', lockMode: 'permanent', permanentAck: 'yes', lockPassword: 'mine-known' };
+  const r1 = handler.generate({ method: 'POST', body });
+  const r2 = handler.generate({ method: 'POST', body });
+  assert.equal(r1.status, 200);
+  const x1 = contentOf(r1);
+  assert.doesNotMatch(x1, /mine-known/); // a typed password is ignored in permanent mode
+  assert.match(pwOf(x1), /^[A-Za-z0-9_-]{43}$/);
+  assert.notEqual(pwOf(x1), pwOf(contentOf(r2)));
+  assert.deepEqual(Object.keys(r1.headers).sort(), ['Cache-Control', 'Content-Disposition', 'Content-Type']);
 });
 
 // export chain for the manual openssl check

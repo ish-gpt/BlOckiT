@@ -35,6 +35,39 @@
         <button type="button" class="chip" data-domain="netflix.com">Netflix</button>
       </div>
 
+      <div class="lock">
+        <label class="switch">
+          <input type="checkbox" id="lockToggle" name="lock" value="on">
+          <span class="switch-track" aria-hidden="true"></span>
+          <span class="switch-text"><strong>Lock it</strong> <span class="hint">password needed to remove</span></span>
+        </label>
+        <div id="lockFields" class="lock-fields" hidden>
+          <div class="segmented" role="radiogroup" aria-label="Lock type">
+            <label><input type="radio" name="lockMode" value="password" checked disabled><span>Set a password</span></label>
+            <label><input type="radio" name="lockMode" value="permanent" disabled><span>Lock forever</span></label>
+          </div>
+
+          <div id="passwordMode" class="lock-mode">
+            <input type="password" id="lockPassword" name="lockPassword" autocomplete="new-password"
+              placeholder="Lock password (6+ characters)" aria-label="Lock password" maxlength="128" disabled>
+            <input type="password" id="lockPasswordConfirm" name="lockPasswordConfirm" autocomplete="new-password"
+              placeholder="Type it again" aria-label="Confirm lock password" maxlength="128" disabled>
+            <p class="lock-note">Not your iPhone passcode. Best if a friend types it so you don't know it.
+              Delete the downloaded file after installing, because the password is stored inside it.</p>
+          </div>
+
+          <div id="permanentMode" class="lock-mode" hidden>
+            <p class="lock-warning">A random password is made and thrown away. <strong>Nobody</strong> will ever know it,
+              not even this app. The only way to remove this profile or change its list is to
+              <strong>erase your iPhone</strong>.</p>
+            <label class="ack">
+              <input type="checkbox" id="permanentAck" name="permanentAck" value="yes" disabled>
+              <span>I understand. Only erasing my iPhone removes this.</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <details class="access">
         <summary>Have an access code?</summary>
         <input type="password" name="accessCode" autocomplete="off" placeholder="Access code" aria-label="Access code">

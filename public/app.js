@@ -2,6 +2,7 @@
 
 (function () {
   const MAX_DOMAINS = 500;
+  const MIN_PASSWORD = 6;
   const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
   const form = document.getElementById('blockForm');
@@ -10,6 +11,18 @@
   const button = document.getElementById('submitBtn');
   const btnLabel = document.getElementById('btnLabel');
   const chips = document.querySelectorAll('.chip');
+  const lockToggle = document.getElementById('lockToggle');
+  const lockFields = document.getElementById('lockFields');
+  const lockPassword = document.getElementById('lockPassword');
+  const lockConfirm = document.getElementById('lockPasswordConfirm');
+  const modeRadios = document.querySelectorAll('input[name="lockMode"]');
+  const passwordMode = document.getElementById('passwordMode');
+  const permanentMode = document.getElementById('permanentMode');
+  const permanentAck = document.getElementById('permanentAck');
+
+  function isPermanent() {
+    return lockToggle.checked && document.querySelector('input[name="lockMode"]:checked').value === 'permanent';
+  }
 
   // Mirrors lib/profile.js normaliseDomain; the server re-validates everything.
   function normalise(raw) {
@@ -50,9 +63,23 @@
     status.className = 'status' + (kind ? ' is-' + kind : '');
   }
 
+  // Returns an error message, '' when the lock is off or valid, or null when still incomplete.
+  function lockProblem() {
+    if (!lockToggle.checked) return '';
+    if (isPermanent()) return permanentAck.checked ? '' : null;
+    const pw = lockPassword.value;
+    const confirm = lockConfirm.value;
+    if (!pw) return null;
+    if (pw.length < MIN_PASSWORD) return 'Lock password needs at least ' + MIN_PASSWORD + ' characters.';
+    if (!confirm) return null;
+    if (pw !== confirm) return "The two lock passwords don't match.";
+    return '';
+  }
+
   function refresh() {
     const { valid, invalid } = read();
     const n = valid.size;
+    const lockIssue = lockProblem();
 
     const apexes = new Set([...valid].map(apex));
     chips.forEach((chip) => chip.classList.toggle('is-on', apexes.has(chip.dataset.domain)));
@@ -61,13 +88,20 @@
       setStatus('Not a domain: ' + invalid.slice(0, 3).join(', ') + (invalid.length > 3 ? '…' : ''), 'error');
     } else if (n > MAX_DOMAINS) {
       setStatus('That is a lot of sites. Keep it under ' + MAX_DOMAINS + '.', 'error');
+    } else if (lockIssue) {
+      setStatus(lockIssue, 'error');
     } else {
       setStatus('');
     }
 
-    const ok = n > 0 && !invalid.length && n <= MAX_DOMAINS;
+    const ok = n > 0 && !invalid.length && n <= MAX_DOMAINS && lockIssue === '';
+    const sites = n + (n === 1 ? ' site' : ' sites');
     button.disabled = !ok;
-    btnLabel.textContent = n === 0 ? 'Add a site to start' : 'Block ' + n + (n === 1 ? ' site' : ' sites');
+    if (n === 0) btnLabel.textContent = 'Add a site to start';
+    else if (isPermanent() && lockIssue === null) btnLabel.textContent = 'Tick the box to lock forever';
+    else if (lockToggle.checked && lockIssue === null) btnLabel.textContent = 'Set a lock password';
+    else if (isPermanent()) btnLabel.textContent = 'Block ' + sites + ' forever';
+    else btnLabel.textContent = (lockToggle.checked ? 'Block & lock ' : 'Block ') + sites;
   }
 
   function toggleDomain(domain) {
@@ -80,6 +114,34 @@
 
   chips.forEach((chip) => chip.addEventListener('click', () => toggleDomain(chip.dataset.domain)));
   textarea.addEventListener('input', refresh);
+  lockPassword.addEventListener('input', refresh);
+  lockConfirm.addEventListener('input', refresh);
+
+  // Disabled inputs aren't submitted, so only the active lock mode's fields reach the server.
+  function syncLock() {
+    const on = lockToggle.checked;
+    const permanent = isPermanent();
+    lockFields.hidden = !on;
+    modeRadios.forEach((r) => (r.disabled = !on));
+    passwordMode.hidden = permanent;
+    permanentMode.hidden = !permanent;
+    lockPassword.disabled = !on || permanent;
+    lockConfirm.disabled = !on || permanent;
+    permanentAck.disabled = !on || !permanent;
+    button.classList.toggle('is-danger', permanent);
+  }
+  lockToggle.addEventListener('change', () => {
+    syncLock();
+    if (lockToggle.checked && !isPermanent()) lockPassword.focus();
+    refresh();
+  });
+  modeRadios.forEach((r) =>
+    r.addEventListener('change', () => {
+      syncLock();
+      refresh();
+    }),
+  );
+  permanentAck.addEventListener('change', refresh);
 
   form.addEventListener('submit', (event) => {
     refresh();
@@ -88,10 +150,18 @@
       return;
     }
     // Native form POST so iOS Safari hands the response straight to the profile installer.
-    setStatus('Profile on its way — tap Allow, then open Settings.', 'ok');
+    setStatus(
+      isPermanent()
+        ? 'Permanent profile on its way. Install it, then delete the file without opening it.'
+        : lockToggle.checked
+        ? 'Locked profile on its way. Delete the file after installing.'
+        : 'Profile on its way — tap Allow, then open Settings.',
+      'ok',
+    );
     button.classList.add('is-sent');
     setTimeout(() => button.classList.remove('is-sent'), 1200);
   });
 
+  syncLock();
   refresh();
 })();
